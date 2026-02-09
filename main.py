@@ -9,6 +9,7 @@ from telegram.ext import (
     filters,
     ContextTypes
 )
+from telegram.request import HTTPXRequest
 from dotenv import load_dotenv
 import database
 
@@ -162,9 +163,14 @@ async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # هنا يمكنك إضافة منطق التحقق من الإجابة
     await query.edit_message_text("تم تسجيل إجابتك!")
 
-def main():
+# دالة لتشغيل البوت على Render
+def run_webhook():
+    TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+    PORT = int(os.environ.get('PORT', 8443))
+    APP_NAME = os.environ.get('APP_NAME')
+    
     # إنشاء التطبيق
-    application = Application.builder().token(os.getenv('TELEGRAM_BOT_TOKEN')).build()
+    application = Application.builder().token(TOKEN).build()
     
     # إضافة المعالجات
     application.add_handler(CommandHandler('start', start))
@@ -177,8 +183,40 @@ def main():
     
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     
-    # بدء البوت
+    # تشغيل Webhook على Render
+    if APP_NAME:  # يعني أننا على Render
+        webhook_url = f'https://{APP_NAME}.onrender.com/{TOKEN}'
+        application.run_webhook(
+            listen="0.0.0.0",
+            port=PORT,
+            url_path=TOKEN,
+            webhook_url=webhook_url
+        )
+    else:  # للتشغيل المحلي
+        application.run_polling()
+
+# دالة Polling للتشغيل المحلي
+def run_polling():
+    TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+    
+    application = Application.builder().token(TOKEN).build()
+    
+    # إضافة المعالجات
+    application.add_handler(CommandHandler('start', start))
+    application.add_handler(CallbackQueryHandler(handle_role, pattern='^(teacher|student)$'))
+    application.add_handler(CallbackQueryHandler(handle_question_type, pattern='^type_'))
+    application.add_handler(CallbackQueryHandler(handle_answer, pattern='^answer_'))
+    
+    application.add_handler(CommandHandler('add_question', add_question))
+    application.add_handler(CommandHandler('take_test', take_test))
+    
+    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    
     application.run_polling()
 
 if __name__ == '__main__':
-    main()
+    # اختيار طريقة التشغيل حسب البيئة
+    if os.environ.get('RENDER'):
+        run_webhook()
+    else:
+        run_polling()
